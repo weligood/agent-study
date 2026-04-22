@@ -1,6 +1,6 @@
 """工具层单元测试：验证 Web 搜索工具的 JSON envelope 格式。
 
-注意：这些测试需要配置 SEARCH_API_KEY 和 SEARCH_BASE_URL 才能通过。
+注意：这些测试依赖联网（SearXNG 或 DuckDuckGo 回退）；未配置时部分断言可能因无结果而跳过。
 未配置时工具会返回 ok=False 的结果，测试验证这一行为。
 """
 
@@ -11,8 +11,7 @@ import sys
 import unittest
 from pathlib import Path
 
-# 直接运行本文件时，将项目根插入 path，以便导入 `tv_agent`。
-_PROJECT_ROOT = Path(__file__).resolve().parent.parent
+_PROJECT_ROOT = Path(__file__).resolve().parents[2]
 if str(_PROJECT_ROOT) not in sys.path:
     sys.path.insert(0, str(_PROJECT_ROOT))
 

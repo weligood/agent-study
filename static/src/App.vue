@@ -56,6 +56,25 @@ function generateSessionId() {
   return 'sess_' + Date.now().toString(36) + '_' + Math.random().toString(36).slice(2, 8);
 }
 
+function generateClientRequestId() {
+  if (typeof crypto !== 'undefined' && typeof crypto.randomUUID === 'function') {
+    return crypto.randomUUID();
+  }
+  return 'req_' + Date.now().toString(36) + '_' + Math.random().toString(36).slice(2, 10);
+}
+
+/** 将 API 错误 JSON（detail + request_id）拼成可读文案 */
+function formatApiErrorBody(obj) {
+  if (!obj || typeof obj !== 'object') return String(obj || '请求失败');
+  const parts = [];
+  if (obj.detail !== undefined && obj.detail !== null) {
+    const d = obj.detail;
+    parts.push(typeof d === 'string' ? d : JSON.stringify(d));
+  }
+  if (obj.request_id) parts.push('request_id: ' + obj.request_id);
+  return parts.join(' · ') || '请求失败';
+}
+
 export default {
   name: 'App',
   components: {
@@ -70,8 +89,16 @@ export default {
     const loading       = ref(false);
     const thinkingSteps = ref([]);
     const sessionId     = ref(generateSessionId());
+    const lastPreferences = ref(null);
 
-    const doSearch = async ({ queryType, query, hint }) => {
+    const doSearch = async (params) => {
+      const { queryType, query, hint } = params;
+      if ('preferences' in params) {
+        lastPreferences.value =
+          params.preferences && Object.keys(params.preferences).length
+            ? params.preferences
+            : null;
+      }
       loading.value       = true;
       result.value        = null;
       thinkingSteps.value = [];
@@ -84,17 +111,31 @@ export default {
         };
         if (queryType === 'title') payload.title = query;
         else payload.actor = query;
+        if (lastPreferences.value && Object.keys(lastPreferences.value).length) {
+          payload.preferences = lastPreferences.value;
+        }
+
+        const clientRequestId = generateClientRequestId();
+        const jsonHeaders = {
+          'Content-Type': 'application/json',
+          'X-Request-ID': clientRequestId,
+        };
 
         // 使用 SSE 流式端点
         const res = await fetch('/api/query/stream', {
           method: 'POST',
-          headers: { 'Content-Type': 'application/json' },
+          headers: jsonHeaders,
           body: JSON.stringify(payload),
         });
 
         if (!res.ok) {
-          const err = await res.json();
-          throw new Error(err.detail || '查询失败');
+          let errBody = {};
+          try {
+            errBody = await res.json();
+          } catch (_) {
+            errBody = {};
+          }
+          throw new Error(formatApiErrorBody(errBody));
         }
 
         // 解析 SSE 事件流
@@ -120,11 +161,37 @@ export default {
                 const data = JSON.parse(dataStr);
                 if (eventType === 'step') {
                   thinkingSteps.value.push(data);
-                } else if (eventType === 'result') {
+                } else if (eventType.startsWith('trace.')) {
+                  const sub = eventType.replace(/^trace\./, '');
+                  const typeMap = {
+                    start: 'start',
+                    step: 'thinking',
+                    tool_call: 'tool_call',
+                    tool_result: 'tool_result',
+                    human_needed: 'agent_action',
+                    warning: 'error',
+                    metrics: 'thinking',
+                  };
+                  const stepMsg =
+                    sub === 'metrics' && data.payload && data.payload.metrics
+                      ? `耗时 ${data.payload.metrics.total_ms} ms · ${data.payload.metrics.intent || ''} · ${data.payload.metrics.execution_mode || ''}`
+                      : (data.message || eventType);
+                  thinkingSteps.value.push({
+                    type: typeMap[sub] || 'thinking',
+                    message: stepMsg,
+                    trace: data,
+                    traceEvent: eventType,
+                  });
+                } else if (eventType === 'result.partial') {
+                  result.value = data;
+                } else if (eventType === 'result.final' || eventType === 'result') {
                   result.value = data;
                 } else if (eventType === 'error') {
-                  ElementPlus.ElMessage.error(data.message || '查询出错');
-                  loading.value = false;  // error 时立即停止 loading
+                  const em =
+                    (data.message || '查询出错') +
+                    (data.request_id ? ' · request_id: ' + data.request_id : '');
+                  ElementPlus.ElMessage.error(em);
+                  loading.value = false;
                 }
               } catch (e) {
                 // 忽略解析错误
@@ -137,14 +204,14 @@ export default {
         if (!result.value) {
           const fallbackRes = await fetch('/api/query', {
             method: 'POST',
-            headers: { 'Content-Type': 'application/json' },
+            headers: jsonHeaders,
             body: JSON.stringify(payload),
           });
           const fallbackData = await fallbackRes.json();
           if (fallbackRes.ok) {
             result.value = fallbackData;
           } else {
-            throw new Error(fallbackData.detail || '查询失败');
+            throw new Error(formatApiErrorBody(fallbackData));
           }
         }
       } catch (err) {

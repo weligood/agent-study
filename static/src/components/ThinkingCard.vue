@@ -11,10 +11,20 @@
         v-for="(step, index) in steps"
         :key="index"
         class="thinking-step"
-        :class="step.type"
+        :class="[step.type, step.traceEvent ? 'has-trace' : '']"
       >
-        <span class="step-icon">{{ getStepIcon(step.type) }}</span>
-        <span class="step-message">{{ step.message }}</span>
+        <div class="step-main">
+          <span class="step-icon">{{ getStepIcon(step.type) }}</span>
+          <span class="step-message">{{ step.message }}</span>
+          <span v-if="step.traceEvent" class="event-badge">{{ step.traceEvent }}</span>
+        </div>
+        <div v-if="formatStepMeta(step)" class="step-meta">{{ formatStepMeta(step) }}</div>
+        <details v-if="step.trace && step.trace.payload && step.trace.payload.nodes" class="step-details">
+          <summary>LangGraph 节点 ({{ step.trace.payload.nodes.length }})</summary>
+          <ol class="node-list">
+            <li v-for="(n, i) in step.trace.payload.nodes" :key="i">{{ n }}</li>
+          </ol>
+        </details>
       </div>
     </div>
   </div>
@@ -76,7 +86,26 @@ export default {
       return icons[type] || '\u{1F4CC}';
     };
 
-    return { isCollapsed, canCollapse, toggleCollapse, getStepIcon };
+    const formatStepMeta = (step) => {
+      const t = step.trace;
+      if (!t || typeof t !== 'object') return '';
+      const parts = [];
+      if (t.source) parts.push(t.source);
+      if (t.phase) parts.push(t.phase);
+      if (t.tool) parts.push('tool:' + t.tool);
+      if (t.trace_id) parts.push('trace:' + String(t.trace_id).slice(0, 8) + '…');
+      const p = t.payload || {};
+      if (p.correlation && p.correlation.request_id) {
+        parts.push('req:' + String(p.correlation.request_id).slice(0, 10) + (p.correlation.request_id.length > 10 ? '…' : ''));
+      }
+      const o = p.orchestration;
+      if (o && o.intent) parts.push('intent:' + o.intent);
+      if (o && o.execution_mode) parts.push('mode:' + o.execution_mode);
+      if (p.metrics && p.metrics.total_ms != null) parts.push(String(p.metrics.total_ms) + 'ms');
+      return parts.join(' · ');
+    };
+
+    return { isCollapsed, canCollapse, toggleCollapse, getStepIcon, formatStepMeta };
   },
 };
 </script>
@@ -144,14 +173,60 @@ export default {
 
 .thinking-step {
   display: flex;
-  align-items: center;
-  gap: 8px;
+  flex-direction: column;
+  align-items: stretch;
+  gap: 4px;
   font-size: 13px;
   color: #999;
-  padding: 6px 10px;
+  padding: 8px 10px;
   border-radius: 6px;
   background: rgba(255, 255, 255, 0.03);
   animation: fadeIn 0.3s ease-in;
+}
+
+.thinking-step.has-trace {
+  border-left: 2px solid rgba(233, 69, 96, 0.45);
+}
+
+.step-main {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+}
+
+.event-badge {
+  margin-left: auto;
+  font-size: 10px;
+  font-family: ui-monospace, monospace;
+  color: #e94560;
+  background: rgba(233, 69, 96, 0.12);
+  padding: 2px 6px;
+  border-radius: 4px;
+  flex-shrink: 0;
+}
+
+.step-meta {
+  font-size: 11px;
+  color: #666;
+  padding-left: 28px;
+  line-height: 1.4;
+}
+
+.step-details {
+  font-size: 11px;
+  color: #777;
+  padding-left: 24px;
+}
+
+.step-details summary {
+  cursor: pointer;
+  color: #888;
+}
+
+.node-list {
+  margin: 6px 0 0 0;
+  padding-left: 18px;
+  color: #888;
 }
 
 .thinking-step.tool_call {

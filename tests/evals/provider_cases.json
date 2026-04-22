@@ -1,0 +1,12 @@
+{
+  "version": 1,
+  "description": "平台 availability / provider 映射评测占位",
+  "cases": [
+    {
+      "id": "prov-001",
+      "standard_title": "示例剧",
+      "work_id": "web-example-2023",
+      "expect_platform_keywords": ["爱奇艺", "腾讯视频"]
+    }
+  ]
+}

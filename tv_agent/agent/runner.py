@@ -1,60 +1,20 @@
-"""
-LangChain Tool Calling Agent 装配：模型、工具、Prompt、Executor。
-
-解析模型最终输出中的 JSON，并校验为 `TVAvailabilityResult`。
-"""
+"""AgentExecutor 构建与剧名/演员查询入口。"""
 
 from __future__ import annotations
 
-import json
 import logging
-import re
 from typing import Any
 
+from langchain_classic.agents import AgentExecutor
 from langchain_core.callbacks import BaseCallbackHandler
-from langchain_classic.agents import AgentExecutor, create_tool_calling_agent
-from langchain_openai import ChatOpenAI
 
 from config import Settings, get_settings
-from tv_agent.prompt import build_agent_prompt
-from tv_agent.schemas import ResultStatus, TVAvailabilityResult
-from tv_agent.tools import get_tv_legal_tools
+from tv_agent.domain.schemas import ResultStatus, TVAvailabilityResult
+from tv_agent.llm_client import get_tool_calling_agent_bundle
+
+from .extraction import _agent_text_to_result
 
 logger = logging.getLogger(__name__)
-
-
-def _extract_json_object(text: str) -> dict[str, Any]:
-    """从模型输出中提取单个 JSON 对象；兼容 Markdown 围栏。"""
-    s = text.strip()
-    fence = re.search(r"```(?:json)?\s*(\{.*\})\s*```", s, flags=re.DOTALL | re.IGNORECASE)
-    if fence:
-        s = fence.group(1).strip()
-    start = s.find("{")
-    if start == -1:
-        raise ValueError("输出中未找到 JSON 对象起始")
-    decoder = json.JSONDecoder()
-    obj, _end = decoder.raw_decode(s[start:])
-    if not isinstance(obj, dict):
-        raise ValueError("JSON 顶层必须是对象")
-    return obj
-
-
-def parse_agent_output_to_result(agent_output: str, fallback_query: str) -> TVAvailabilityResult:
-    """将 Agent 最终文本解析为 `TVAvailabilityResult`；失败时返回降级结果。"""
-    try:
-        data = _extract_json_object(agent_output)
-        return TVAvailabilityResult.model_validate(data)
-    except Exception as e:  # noqa: BLE001
-        logger.warning("解析 Agent JSON 失败，使用降级结果: %s", e)
-        return TVAvailabilityResult(
-            query_title=fallback_query,
-            result_status=ResultStatus.PARTIAL,
-            confidence="模型输出无法解析为结构化 JSON；请检查 prompt 遵循度或提高模型能力。",
-            disclaimer=(
-                "本结果为解析失败降级输出，不代表任何平台可用性；"
-                "禁止用于盗版或绕过版权保护之目的。"
-            ),
-        )
 
 
 def build_executor(
@@ -68,16 +28,7 @@ def build_executor(
     if not cfg.openai_api_key:
         raise RuntimeError("缺少 OPENAI_API_KEY，无法初始化对话模型。")
 
-    llm = ChatOpenAI(
-        model=cfg.model_name,
-        temperature=0,
-        timeout=cfg.request_timeout_seconds,
-        api_key=cfg.openai_api_key,
-        base_url=cfg.openai_base_url,
-    )
-    tools = get_tv_legal_tools()
-    prompt = build_agent_prompt()
-    agent_runnable = create_tool_calling_agent(llm, tools, prompt)
+    agent_runnable, tools = get_tool_calling_agent_bundle(cfg)
     return AgentExecutor(
         agent=agent_runnable,
         tools=tools,
@@ -117,7 +68,13 @@ def _run_query(
     output = raw.get("output", "")
     if not isinstance(output, str):
         output = str(output)
-    return parse_agent_output_to_result(output, fallback_query=fallback_query)
+    cfg = settings or get_settings()
+    return _agent_text_to_result(
+        cfg,
+        agent_input=agent_input,
+        agent_output=output,
+        fallback_query=fallback_query,
+    )
 
 
 def run_availability_query(
@@ -174,3 +131,10 @@ def run_actor_search_query(
     else:
         agent_input = f"请查询以下演员参演的电视剧列表，并列出每部剧的基础信息。\n演员：{actor}"
     return _run_query(agent_input, actor, settings, memory=memory, callbacks=callbacks)
+
+
+__all__ = [
+    "build_executor",
+    "run_availability_query",
+    "run_actor_search_query",
+]

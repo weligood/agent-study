@@ -4,6 +4,8 @@ from __future__ import annotations
 
 from pydantic import BaseModel, Field, field_validator
 
+from tv_agent.preferences import UserQueryPreferences
+
 
 class TvQueryRequest(BaseModel):
     """POST /api/query 请求体。"""
@@ -33,6 +35,10 @@ class TvQueryRequest(BaseModel):
         default=None,
         max_length=64,
         description="会话 ID，用于多轮对话记忆",
+    )
+    preferences: UserQueryPreferences | None = Field(
+        default=None,
+        description="可选：访问类型、平台、置信度、相似剧关键词等约束（偏好层）",
     )
 
     @field_validator("query_type")

@@ -40,6 +40,11 @@
       placeholder="消歧提示：年份如 2023，或 work_id（可选）"
       size="default"
     />
+
+    <div class="pref-row">
+      <label class="pref-label"><input type="checkbox" v-model="prefOfficialOnly" /> 仅官方入口</label>
+      <label class="pref-label"><input type="checkbox" v-model="prefHideRent" /> 隐藏「租赁」类 offer</label>
+    </div>
   </div>
 </template>
 
@@ -59,6 +64,8 @@ export default {
     const queryType = ref('title');
     const query = ref('');
     const hint = ref('');
+    const prefOfficialOnly = ref(false);
+    const prefHideRent = ref(false);
 
     const tabs = [
       { type: 'title', label: '按剧名查询', icon: '📺' },
@@ -75,12 +82,20 @@ export default {
       return queryType.value === 'title' ? '📺' : '🎭';
     });
 
+    const buildPreferences = () => {
+      const o = {};
+      if (prefOfficialOnly.value) o.official_only = true;
+      if (prefHideRent.value) o.excluded_access_types = ['rent'];
+      return Object.keys(o).length ? o : null;
+    };
+
     const handleSearch = () => {
       if (!query.value.trim()) return;
       emit('search', {
         queryType: queryType.value,
         query: query.value.trim(),
-        hint: hint.value.trim()
+        hint: hint.value.trim(),
+        preferences: buildPreferences(),
       });
     };
 
@@ -88,6 +103,8 @@ export default {
       queryType,
       query,
       hint,
+      prefOfficialOnly,
+      prefHideRent,
       tabs,
       currentPlaceholder,
       currentIcon,
@@ -209,6 +226,27 @@ export default {
   color: #ccc;
   height: 40px;
   font-size: 13px;
+}
+
+.pref-row {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 16px;
+  margin-top: 12px;
+  font-size: 13px;
+  color: #999;
+}
+
+.pref-label {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+  cursor: pointer;
+  user-select: none;
+}
+
+.pref-label input {
+  accent-color: #e94560;
 }
 
 .loading-spinner {

@@ -1,15 +1,17 @@
 """
-结构化输出模型：便于 CLI 打印、日志与未来 Web API 序列化为 JSON。
+领域模型：枚举、DTO、查询结果契约。
 
-所有字段设计为可选或带默认值，以兼容「部分成功」与消歧场景。
+供 Agent、LangGraph、API 共用；避免在业务包中散落无类型 dict。
 """
 
 from __future__ import annotations
 
 from enum import Enum
-from typing import Any
+from typing import Any, Literal
 
 from pydantic import BaseModel, ConfigDict, Field
+
+OfferAccessType = Literal["subscription", "rent", "buy", "free", "unknown"]
 
 
 class ResultStatus(str, Enum):
@@ -38,6 +40,30 @@ class PaymentType(str, Enum):
     PURCHASE = "purchase"
     AD_SUPPORTED = "ad_supported"
     UNKNOWN = "unknown"
+
+
+class StreamingOffer(BaseModel):
+    """统一的平台可看性/购买入口模型（可排序、过滤、解释）。"""
+
+    model_config = ConfigDict(extra="ignore")
+
+    provider: str = Field(..., description="平台或服务商标识")
+    region: str | None = Field(default=None, description="地区/分区，未知为 null")
+    access_type: OfferAccessType = Field(
+        default="unknown",
+        description="访问方式：订阅/租/买/免费/未知",
+    )
+    quality: str | None = Field(default=None, description="画质档位，若未知为 null")
+    language: list[str] = Field(default_factory=list, description="音轨语言")
+    subtitle: list[str] = Field(default_factory=list, description="字幕语言")
+    deeplink: str | None = Field(default=None, description="官方落地页或深链")
+    official: bool = Field(default=True, description="是否视为官方入口")
+    confidence: float = Field(
+        default=0.0,
+        ge=0.0,
+        le=1.0,
+        description="该条 offer 的可信度 0~1",
+    )
 
 
 class PlatformInfo(BaseModel):
@@ -80,9 +106,13 @@ class CandidateTitle(BaseModel):
     release_year: int | None = None
     region: str | None = None
     brief_note: str | None = None
+    score: float | None = Field(
+        default=None,
+        description="解析器给出的同名条目匹配分，可选",
+    )
     work_id: str | None = Field(
         default=None,
-        description="内部作品标识，便于多轮对话消歧（可选）",
+        description="内部作品标识（canonical），便于多轮对话消歧",
     )
 
 
@@ -115,6 +145,20 @@ class DownloadResultBrief(BaseModel):
     message: str | None = None
 
 
+class QueryResponseMeta(BaseModel):
+    """与单次 HTTP 响应对齐的观测摘要（不参与业务推理，仅供客户端与日志关联）。"""
+
+    model_config = ConfigDict(extra="ignore")
+
+    request_id: str | None = None
+    trace_id: str | None = None
+    run_id: str | None = None
+    intent: str | None = None
+    execution_mode: str | None = None
+    use_agent: bool | None = None
+    total_ms: float | None = None
+
+
 class TVAvailabilityResult(BaseModel):
     """
     Agent 最终应汇总为此结构。
@@ -125,6 +169,10 @@ class TVAvailabilityResult(BaseModel):
     model_config = ConfigDict(extra="ignore")
 
     query_title: str = Field(..., description="用户原始输入")
+    canonical_work_id: str | None = Field(
+        default=None,
+        description="规范化后的作品 id，后续片单/历史/推荐应围绕此字段",
+    )
     standard_title: str | None = Field(default=None, description="标准剧名")
     alternative_titles: list[str] = Field(default_factory=list)
     release_year: int | None = None
@@ -136,6 +184,10 @@ class TVAvailabilityResult(BaseModel):
         description="存在歧义时的候选剧集",
     )
     platforms: list[PlatformInfo] = Field(default_factory=list)
+    streaming_offers: list[StreamingOffer] = Field(
+        default_factory=list,
+        description="结构化平台 offer，便于排序与解释",
+    )
     similar_titles: list[CandidateTitle] = Field(
         default_factory=list,
         description="推荐的相似剧集",
@@ -161,7 +213,30 @@ class TVAvailabilityResult(BaseModel):
         default=None,
         description="视频下载结果（仅当执行了下载时）",
     )
+    pipeline_node_trace: list[str] = Field(
+        default_factory=list,
+        description="LangGraph 节点级轨迹（pipeline 模式），便于与 trace 层对齐展示",
+    )
+    response_meta: QueryResponseMeta | None = Field(
+        default=None,
+        description="请求级 trace / 编排摘要，由服务层注入",
+    )
 
     def model_dump_api(self) -> dict[str, Any]:
         """供未来 FastAPI 等直接返回的 dict（枚举转值）。"""
         return self.model_dump(mode="json")
+
+
+__all__ = [
+    "OfferAccessType",
+    "ResultStatus",
+    "AvailabilityStatus",
+    "PaymentType",
+    "StreamingOffer",
+    "PlatformInfo",
+    "CandidateTitle",
+    "VideoInfoBrief",
+    "DownloadResultBrief",
+    "QueryResponseMeta",
+    "TVAvailabilityResult",
+]

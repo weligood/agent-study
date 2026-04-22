@@ -29,6 +29,14 @@
       </div>
     </div>
 
+    <div v-if="result.response_meta" class="response-meta-bar">
+      <span v-if="result.response_meta.request_id" class="rm">请求 ID: <code>{{ result.response_meta.request_id }}</code></span>
+      <span v-if="result.response_meta.trace_id" class="rm">Trace: <code>{{ shortId(result.response_meta.trace_id) }}</code></span>
+      <span v-if="result.response_meta.intent" class="rm">{{ result.response_meta.intent }}</span>
+      <span v-if="result.response_meta.execution_mode" class="rm">{{ result.response_meta.execution_mode }}</span>
+      <span v-if="result.response_meta.total_ms != null" class="rm">{{ result.response_meta.total_ms }} ms</span>
+    </div>
+
     <!-- 候选剧集 -->
     <template v-if="result.candidate_titles?.length">
       <div class="section-title">候选剧集（点击选择）</div>
@@ -156,6 +164,7 @@ const FALLBACK_LOGOS = {
   '央视网': 'https://tv.cctv.com/favicon.ico',
 };
 const platformLogo = (name) => FALLBACK_LOGOS[name] || null;
+const shortId = (s) => (s && s.length > 12 ? s.slice(0, 8) + '…' : (s || ''));
 
 const getStatusText = (s) => ({ success:'查询成功', ambiguous:'需要消歧', not_found:'未找到', partial:'部分信息' })[s] || s;
 const getStatusType = (s) => ({ success:'success', ambiguous:'warning', not_found:'danger', partial:'info' })[s] || 'info';
@@ -210,6 +219,7 @@ export default {
       getPaymentText,
       openPlatform,
       platformLogo,
+      shortId,
       followUpText,
       submitFollowUp,
     };
@@ -265,6 +275,28 @@ export default {
   font-size: 15px;
   font-weight: 600;
   color: #fff;
+}
+
+.response-meta-bar {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 10px 16px;
+  font-size: 11px;
+  color: #888;
+  margin: -8px 0 20px 0;
+  padding: 10px 12px;
+  border-radius: 8px;
+  background: rgba(0, 0, 0, 0.2);
+  border: 1px solid rgba(255, 255, 255, 0.06);
+}
+
+.response-meta-bar .rm code {
+  font-family: ui-monospace, monospace;
+  font-size: 10px;
+  color: #b0b0b0;
+  background: rgba(255, 255, 255, 0.06);
+  padding: 1px 6px;
+  border-radius: 4px;
 }
 
 .section-title {

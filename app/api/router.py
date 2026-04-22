@@ -1,5 +1,7 @@
 """
 聚合 API 路由：统一挂载在 `/api` 前缀下。
+
+OpenAPI 分组与顶层说明见 `app.main` 中 `openapi_tags`、`_OPENAPI_DESCRIPTION`。
 """
 
 from __future__ import annotations

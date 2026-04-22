@@ -1,0 +1,13 @@
+{
+  "version": 1,
+  "description": "标题消歧回归用例（供未来 eval runner 加载；当前为占位 schema）",
+  "cases": [
+    {
+      "id": "amb-001",
+      "query_title": "三体",
+      "hint": "2023 电视剧",
+      "expected_status": "success",
+      "notes": "补充 canonical_work_id / 期望候选数等字段后可自动化打分"
+    }
+  ]
+}

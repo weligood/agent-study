@@ -7,18 +7,47 @@ FastAPI 应用工厂：生命周期、中间件、路由注册、静态资源与
 from __future__ import annotations
 
 from contextlib import asynccontextmanager
+from textwrap import dedent
 
-from fastapi import FastAPI, Request, status
-from fastapi.exceptions import RequestValidationError
+from fastapi import FastAPI
 from fastapi.middleware.cors import CORSMiddleware
-from fastapi.responses import FileResponse, JSONResponse
+from fastapi.responses import FileResponse
 from fastapi.staticfiles import StaticFiles
 
 from app.api.router import api_router
 from app.core.config import ROOT_DIR, get_settings
+from app.core.exception_handlers import register_exception_handlers
 from app.core.logging_config import setup_logging
+from app.middleware.correlation import RequestIdMiddleware
 
 STATIC_DIR = ROOT_DIR / "static"
+
+# OpenAPI /docs 首页说明（Markdown）；与 `app.services.tv_service`、`tv_agent.orchestrator` 行为对齐。
+_OPENAPI_DESCRIPTION = dedent(
+    """
+    ## 电视剧正版可查演示服务
+
+    ### 请求追踪
+    - 请求头可传 **X-Request-ID**；未传时服务端生成 UUID。
+    - 响应头 **`X-Request-ID`** 与 JSON 错误体中的 **`request_id`** 一致；成功时业务结果含 **`response_meta`**。
+
+    ### 查询如何执行
+    - **默认 pipeline**：剧名 → LangGraph（元数据 → 平台 → 相似）；演员 → 确定性联网聚合候选。
+    - **Agent**：环境变量 **`TV_QUERY_MODE=agent`**，或输入为 **`http://` / `https://` 视频页 URL** 时，走 LangChain 工具编排（解析/下载等）。
+
+    ### 端点一览
+    | 方法 | 路径 | 说明 |
+    |------|------|------|
+    | POST | `/api/query` | 同步 JSON，`TVAvailabilityResult` |
+    | POST | `/api/query/stream` | SSE：`trace.*` → `result.final` |
+    | GET | `/api/health` | 存活；有中间件时返回 `request_id` |
+    """
+).strip()
+
+_OPENAPI_TAGS = [
+    {"name": "tv", "description": "剧名/演员正版渠道查询；支持 SSE 流式与 `response_meta` 观测字段。"},
+    {"name": "health", "description": "服务健康检查。"},
+]
 
 
 @asynccontextmanager
@@ -36,12 +65,13 @@ def create_app() -> FastAPI:
 
     app = FastAPI(
         title="TV Legal Availability Agent",
-        description="电视剧正版平台查询（合规演示）",
-        version="0.3.0",
+        description=_OPENAPI_DESCRIPTION,
+        version="0.4.0",
         lifespan=lifespan,
         docs_url="/docs",
         redoc_url="/redoc",
         openapi_url="/openapi.json",
+        openapi_tags=_OPENAPI_TAGS,
     )
 
     app.add_middleware(
@@ -50,9 +80,12 @@ def create_app() -> FastAPI:
         allow_credentials=allow_credentials,
         allow_methods=["GET", "POST", "OPTIONS"],
         allow_headers=["*"],
+        expose_headers=["X-Request-ID"],
     )
+    app.add_middleware(RequestIdMiddleware)
 
     app.include_router(api_router, prefix="/api")
+    register_exception_handlers(app)
 
     @app.get("/", include_in_schema=False)
     async def spa_index() -> FileResponse:
@@ -78,16 +111,6 @@ def create_app() -> FastAPI:
         StaticFiles(directory=str(STATIC_DIR / "assets")),
         name="assets",
     )
-
-    @app.exception_handler(RequestValidationError)
-    async def request_validation_handler(
-        _request: Request,
-        exc: RequestValidationError,
-    ) -> JSONResponse:
-        return JSONResponse(
-            status_code=status.HTTP_422_UNPROCESSABLE_ENTITY,
-            content={"detail": exc.errors()},
-        )
 
     return app
 

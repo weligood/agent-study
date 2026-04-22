@@ -1,0 +1,11 @@
+{
+  "version": 1,
+  "description": "相似剧 / 推荐链路评测占位",
+  "cases": [
+    {
+      "id": "rec-001",
+      "seed_title": "狂飙",
+      "min_similar_count": 1
+    }
+  ]
+}
