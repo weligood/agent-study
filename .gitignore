@@ -1,0 +1,22 @@
+# 环境变量与密钥
+.env
+.env.local
+.env.*.local
+
+# Python
+__pycache__/
+*.py[cod]
+*$py.class
+.Python
+.venv/
+venv/
+*.egg-info/
+.eggs/
+dist/
+build/
+
+# 工具与 IDE
+.idea/
+.vscode/
+*.swp
+.DS_Store
