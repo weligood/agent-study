@@ -71,6 +71,7 @@ function formatApiErrorBody(obj) {
     const d = obj.detail;
     parts.push(typeof d === 'string' ? d : JSON.stringify(d));
   }
+  if (obj.message) parts.push(String(obj.message));
   if (obj.request_id) parts.push('request_id: ' + obj.request_id);
   return parts.join(' · ') || '请求失败';
 }
@@ -104,6 +105,43 @@ export default {
       thinkingSteps.value = [];
 
       try {
+        if (queryType === 'video') {
+          thinkingSteps.value.push({
+            type: 'start',
+            message: '正在解析视频页面',
+          });
+          const res = await fetch('/api/video/extract', {
+            method: 'POST',
+            headers: {
+              'Content-Type': 'application/json',
+              'X-Request-ID': generateClientRequestId(),
+            },
+            body: JSON.stringify({ video_url: query }),
+          });
+          const data = await res.json();
+          if (!res.ok || data.ok === false) {
+            throw new Error(formatApiErrorBody(data));
+          }
+          thinkingSteps.value.push({
+            type: 'tool_result',
+            message: data.message || '视频页面解析完成',
+          });
+          result.value = {
+            query_title: query,
+            standard_title: data.video_info && data.video_info.title,
+            result_status: 'success',
+            confidence: data.message || '已解析视频页面。',
+            disclaimer: '仅展示官方页面可解析到的信息；下载仅适用于您有权获取且平台条款允许的内容。',
+            platforms: [],
+            candidate_titles: [],
+            similar_titles: [],
+            streaming_offers: [],
+            video_info: data.video_info,
+            download_enabled: data.download_enabled === true,
+          };
+          return;
+        }
+
         const payload = {
           query_type: queryType,
           hint: hint || null,

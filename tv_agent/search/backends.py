@@ -76,8 +76,14 @@ def _duckduckgo_backend(cfg: Settings, query: str, num_results: int) -> dict[str
     )
 
 
-def _searxng_backend(cfg: Settings, query: str, num_results: int) -> dict[str, Any] | None:
-    base = (cfg.searxng_base_url or "").rstrip("/")
+def _searxng_backend(
+    cfg: Settings,
+    query: str,
+    num_results: int,
+    *,
+    base_url: str | None = None,
+) -> dict[str, Any] | None:
+    base = (base_url or cfg.searxng_base_url or "").rstrip("/")
     if not base:
         return None
     params = urllib.parse.urlencode(
@@ -139,8 +145,8 @@ def run_unified_web_search(
     cfg = settings or get_settings()
     out: dict[str, Any] | None = None
 
-    if (cfg.searxng_base_url or "").strip():
-        out = _searxng_backend(cfg, query, num_results)
+    for base in cfg.searxng_base_urls():
+        out = _searxng_backend(cfg, query, num_results, base_url=base)
         if out and len(out.get("organic_results") or []) > 0:
             return _apply_meili_fusion(cfg, query, out, num_results=num_results)
 

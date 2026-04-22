@@ -47,7 +47,10 @@ class Settings(BaseSettings):
     )
     searxng_base_url: str | None = Field(
         default=None,
-        description="SearXNG 实例根 URL，如 https://searx.example.org（不要尾斜杠）；联网搜索优先走此接口",
+        description=(
+            "SearXNG 实例根 URL，如 https://searx.example.org（不要尾斜杠）；"
+            "可用逗号或分号配置多个实例，联网搜索会按顺序尝试"
+        ),
     )
     search_fallback_ddg: bool = Field(
         default=True,
@@ -106,6 +109,20 @@ class Settings(BaseSettings):
         if raw == "*":
             return ["*"]
         return [p.strip() for p in raw.split(",") if p.strip()]
+
+    def searxng_base_urls(self) -> list[str]:
+        """返回去重后的 SearXNG 实例列表，支持逗号或分号分隔。"""
+        raw = (self.searxng_base_url or "").strip()
+        if not raw:
+            return []
+        seen: set[str] = set()
+        out: list[str] = []
+        for part in raw.replace(";", ",").split(","):
+            base = part.strip().rstrip("/")
+            if base and base not in seen:
+                seen.add(base)
+                out.append(base)
+        return out
 
 
 @lru_cache(maxsize=1)

@@ -35,13 +35,13 @@ PLATFORM_LOGOS_MAP: dict[str, str] = {
 
 
 def build_search_url(platform_name: str, title: str) -> str:
-    """为平台构建 PC 版搜索链接（使用主域名，避免子域名被屏蔽）。"""
+    """为平台构建稳定的官方搜索落地页，避免模型生成的详情页过期后 404。"""
     encoded = urllib.parse.quote(title)
     url_map = {
-        "爱奇艺": f"https://www.iqiyi.com/search/{encoded}",
+        "爱奇艺": f"https://so.iqiyi.com/so/q_{encoded}",
         "腾讯视频": f"https://v.qq.com/x/search/?q={encoded}",
-        "优酷": f"https://www.youku.com/search/{encoded}",
-        "哔哩哔哩": f"https://www.bilibili.com/search?keyword={encoded}",
+        "优酷": f"https://search.youku.com/search_video?keyword={encoded}",
+        "哔哩哔哩": f"https://search.bilibili.com/all?keyword={encoded}",
         "芒果TV": f"https://www.mgtv.com/so/{encoded}.html",
         "Netflix": f"https://www.netflix.com/search?q={encoded}",
         "央视网": f"https://tv.cctv.com/search/?qtext={encoded}",

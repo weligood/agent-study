@@ -55,6 +55,68 @@
       </div>
     </template>
 
+    <!-- 视频解析与下载 -->
+    <template v-if="result.video_info">
+      <div class="section-title">视频解析</div>
+      <div class="video-panel">
+        <img
+          v-if="result.video_info.thumbnail"
+          :src="result.video_info.thumbnail"
+          :alt="result.video_info.title || '视频封面'"
+          class="video-thumb"
+          @error="(e) => e.target.style.display = 'none'"
+        />
+        <div class="video-body">
+          <div class="video-title">{{ result.video_info.title || result.query_title }}</div>
+          <div class="video-meta">
+            <span v-if="result.video_info.platform">{{ result.video_info.platform }}</span>
+            <span v-if="result.video_info.uploader">{{ result.video_info.uploader }}</span>
+            <span v-if="result.video_info.duration_display || result.video_info.duration">
+              {{ result.video_info.duration_display || formatDuration(result.video_info.duration) }}
+            </span>
+          </div>
+          <div v-if="videoQualities.length" class="quality-list">
+            <button
+              v-for="q in videoQualities"
+              :key="q.quality + '-' + (q.width || '') + '-' + (q.height || '')"
+              class="quality-btn"
+              :disabled="downloadBusy"
+              @click="prepareDownload(q.quality)"
+            >
+              {{ qualityLabel(q) }}
+            </button>
+          </div>
+          <div v-else class="video-note">未解析到可下载清晰度，可能需要登录、会员或平台未开放直链。</div>
+
+          <div class="download-actions">
+            <button
+              class="download-btn"
+              :disabled="downloadBusy || !result.video_info.url"
+              @click="prepareDownload('highest')"
+            >
+              {{ downloadBusy ? '处理中…' : '准备下载最高画质' }}
+            </button>
+            <span class="download-hint">下载前会先创建任务，需要再次确认。</span>
+          </div>
+
+          <div v-if="pendingDownload" class="download-confirm">
+            <div>
+              已准备下载：{{ pendingDownload.title || pendingDownload.platform || '视频' }}
+              <span v-if="pendingDownload.task_id"> · {{ shortId(pendingDownload.task_id) }}</span>
+            </div>
+            <button class="confirm-btn" :disabled="downloadBusy" @click="confirmDownload">
+              确认下载
+            </button>
+          </div>
+
+          <div v-if="downloadResult" class="download-result" :class="{ failed: !downloadResult.success }">
+            {{ downloadResult.message || (downloadResult.success ? '下载完成' : '下载失败') }}
+            <div v-if="downloadResult.file_path" class="download-path">{{ downloadResult.file_path }}</div>
+          </div>
+        </div>
+      </div>
+    </template>
+
     <!-- 平台列表 -->
     <template v-if="result.platforms?.length">
       <div class="section-title">正版播放平台</div>
@@ -63,7 +125,7 @@
           v-for="platform in result.platforms"
           :key="platform.platform_name"
           class="platform-card"
-          :href="platform.official_url || '#'"
+          :href="platformHref(platform)"
           target="_blank"
           rel="noopener noreferrer"
         >
@@ -99,8 +161,8 @@
               {{ getPaymentText(platform.payment_type) }}
             </span>
           </div>
-          <div v-if="platform.official_url" class="platform-action">
-            点击前往观看 →
+          <div class="platform-action">
+            打开官方搜索 →
           </div>
         </a>
       </div>
@@ -151,7 +213,7 @@
 </template>
 
 <script>
-const { computed, ref } = Vue;
+const { computed, ref, watch } = Vue;
 
 // 平台名称 → 备用 logo（favicon）映射（后端会返回 logo_url，此处仅作 fallback）
 const FALLBACK_LOGOS = {
@@ -169,7 +231,27 @@ const shortId = (s) => (s && s.length > 12 ? s.slice(0, 8) + '…' : (s || ''));
 const getStatusText = (s) => ({ success:'查询成功', ambiguous:'需要消歧', not_found:'未找到', partial:'部分信息' })[s] || s;
 const getStatusType = (s) => ({ success:'success', ambiguous:'warning', not_found:'danger', partial:'info' })[s] || 'info';
 const getPaymentText = (t) => ({ free:'免费', subscription:'会员订阅', rental:'租赁', purchase:'购买', ad_supported:'广告支持', unknown:'未知' })[t] || t;
-const openPlatform = (url) => url?.startsWith('http') && window.open(url, '_blank', 'noopener,noreferrer');
+const officialSearchUrl = (platformName, title) => {
+  const q = encodeURIComponent(title || '');
+  if (!q) return null;
+  const map = {
+    '爱奇艺': `https://so.iqiyi.com/so/q_${q}`,
+    '腾讯视频': `https://v.qq.com/x/search/?q=${q}`,
+    '优酷': `https://search.youku.com/search_video?keyword=${q}`,
+    '哔哩哔哩': `https://search.bilibili.com/all?keyword=${q}`,
+    '芒果TV': `https://www.mgtv.com/so/${q}.html`,
+    'Netflix': `https://www.netflix.com/search?q=${q}`,
+    '央视网': `https://tv.cctv.com/search/?qtext=${q}`,
+  };
+  return map[platformName] || null;
+};
+const formatDuration = (seconds) => {
+  const n = Number(seconds || 0);
+  if (!n) return '';
+  const m = Math.floor(n / 60);
+  const s = n % 60;
+  return `${m}分${String(s).padStart(2, '0')}秒`;
+};
 
 export default {
   name: 'ResultCard',
@@ -183,12 +265,25 @@ export default {
   setup(props, { emit }) {
     const statusText = computed(() => getStatusText(props.result.result_status));
     const statusType = computed(() => getStatusType(props.result.result_status));
+    const pendingDownload = ref(null);
+    const downloadResult = ref(null);
+    const downloadBusy = ref(false);
 
     const showMeta = computed(() => {
       return props.result.standard_title ||
              props.result.release_year ||
              props.result.region;
     });
+    const videoQualities = computed(() => props.result.video_info?.available_qualities || []);
+
+    watch(
+      () => props.result,
+      () => {
+        pendingDownload.value = null;
+        downloadResult.value = null;
+        downloadBusy.value = false;
+      },
+    );
 
     const formatCandidateMeta = (item) => {
       return [item.release_year, item.region, item.brief_note]
@@ -199,6 +294,74 @@ export default {
     const getMembershipText = (required) => {
       if (required === null) return '会员未知';
       return required ? '需要会员' : '免会员';
+    };
+    const platformHref = (platform) => {
+      const title = props.result.standard_title || props.result.query_title;
+      return officialSearchUrl(platform.platform_name, title) ||
+        (platform.official_url && platform.official_url.startsWith('http') ? platform.official_url : '#');
+    };
+    const qualityLabel = (q) => {
+      const size = q.width && q.height ? ` · ${q.width}x${q.height}` : '';
+      return `${q.quality || '默认'}${size}`;
+    };
+    const postJson = async (url, payload) => {
+      const res = await fetch(url, {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify(payload),
+      });
+      const data = await res.json();
+      if (!res.ok) throw new Error(data.detail || data.message || '请求失败');
+      return data;
+    };
+    const prepareDownload = async (quality) => {
+      if (!props.result.video_info?.url) return;
+      downloadBusy.value = true;
+      downloadResult.value = null;
+      try {
+        const data = await postJson('/api/video/download/prepare', {
+          video_url: props.result.video_info.url,
+          quality,
+        });
+        if (data.policy_blocked) {
+          ElementPlus.ElMessage.warning(data.message || '当前未开放下载');
+          return;
+        }
+        if (!data.ok) {
+          ElementPlus.ElMessage.error(data.message || '准备下载失败');
+          return;
+        }
+        if (data.download_eligible === false) {
+          ElementPlus.ElMessage.warning('没有可下载格式，可能需要登录、会员或平台未开放直链');
+          return;
+        }
+        pendingDownload.value = data;
+        ElementPlus.ElMessage.success('下载任务已准备，请确认后开始');
+      } catch (e) {
+        ElementPlus.ElMessage.error(e.message || '准备下载失败');
+      } finally {
+        downloadBusy.value = false;
+      }
+    };
+    const confirmDownload = async () => {
+      if (!pendingDownload.value?.task_id) return;
+      downloadBusy.value = true;
+      try {
+        const data = await postJson('/api/video/download/confirm', {
+          task_id: pendingDownload.value.task_id,
+        });
+        downloadResult.value = data;
+        if (data.success) {
+          ElementPlus.ElMessage.success(data.message || '下载完成');
+          pendingDownload.value = null;
+        } else {
+          ElementPlus.ElMessage.error(data.message || '下载失败');
+        }
+      } catch (e) {
+        ElementPlus.ElMessage.error(e.message || '下载失败');
+      } finally {
+        downloadBusy.value = false;
+      }
     };
 
     const followUpText = ref('');
@@ -214,12 +377,20 @@ export default {
       statusText,
       statusType,
       showMeta,
+      videoQualities,
       formatCandidateMeta,
+      formatDuration,
       getMembershipText,
       getPaymentText,
-      openPlatform,
+      platformHref,
       platformLogo,
       shortId,
+      qualityLabel,
+      prepareDownload,
+      confirmDownload,
+      pendingDownload,
+      downloadResult,
+      downloadBusy,
       followUpText,
       submitFollowUp,
     };
@@ -342,6 +513,150 @@ export default {
   display: grid;
   grid-template-columns: repeat(auto-fill, minmax(280px, 1fr));
   gap: 16px;
+}
+
+.video-panel {
+  display: flex;
+  gap: 18px;
+  background: rgba(255, 255, 255, 0.08);
+  border: 1px solid rgba(255, 255, 255, 0.1);
+  border-radius: 12px;
+  padding: 18px;
+  margin-bottom: 24px;
+}
+
+.video-thumb {
+  width: 180px;
+  aspect-ratio: 16 / 9;
+  object-fit: cover;
+  border-radius: 8px;
+  background: rgba(0, 0, 0, 0.25);
+  flex: 0 0 auto;
+}
+
+.video-body {
+  flex: 1;
+  min-width: 0;
+}
+
+.video-title {
+  font-size: 17px;
+  font-weight: 700;
+  color: #fff;
+  margin-bottom: 8px;
+  overflow-wrap: anywhere;
+}
+
+.video-meta {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 8px 14px;
+  color: #999;
+  font-size: 13px;
+  margin-bottom: 14px;
+}
+
+.quality-list {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 8px;
+  margin-bottom: 14px;
+}
+
+.quality-btn,
+.download-btn,
+.confirm-btn {
+  border: none;
+  border-radius: 8px;
+  color: #fff;
+  cursor: pointer;
+  transition: all 0.2s;
+}
+
+.quality-btn {
+  padding: 7px 12px;
+  background: rgba(255, 255, 255, 0.12);
+  font-size: 12px;
+}
+
+.quality-btn:hover:not(:disabled) {
+  background: rgba(233, 69, 96, 0.35);
+}
+
+.download-actions {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: 10px;
+  margin-top: 8px;
+}
+
+.download-btn,
+.confirm-btn {
+  padding: 9px 16px;
+  background: linear-gradient(135deg, #e94560, #c23152);
+  font-size: 13px;
+  font-weight: 600;
+}
+
+.quality-btn:disabled,
+.download-btn:disabled,
+.confirm-btn:disabled {
+  opacity: 0.55;
+  cursor: not-allowed;
+}
+
+.download-hint,
+.video-note {
+  color: #999;
+  font-size: 12px;
+}
+
+.download-confirm,
+.download-result {
+  margin-top: 12px;
+  padding: 12px;
+  border-radius: 8px;
+  font-size: 13px;
+  background: rgba(103, 194, 58, 0.12);
+  border: 1px solid rgba(103, 194, 58, 0.25);
+  color: #d7f5ce;
+}
+
+.download-confirm {
+  display: flex;
+  justify-content: space-between;
+  gap: 10px;
+  align-items: center;
+}
+
+.download-result.failed {
+  background: rgba(245, 108, 108, 0.12);
+  border-color: rgba(245, 108, 108, 0.25);
+  color: #f5c6c6;
+}
+
+.download-path {
+  margin-top: 6px;
+  color: #aaa;
+  font-family: ui-monospace, monospace;
+  font-size: 12px;
+  overflow-wrap: anywhere;
+}
+
+@media (max-width: 640px) {
+  .video-panel {
+    flex-direction: column;
+  }
+
+  .video-thumb {
+    width: 100%;
+  }
+
+  .download-confirm {
+    align-items: stretch;
+    flex-direction: column;
+  }
 }
 
 .platform-card {

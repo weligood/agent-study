@@ -35,13 +35,14 @@
 
     <!-- 消歧提示 -->
     <el-input
+      v-if="queryType !== 'video'"
       v-model="hint"
       class="hint-input"
       placeholder="消歧提示：年份如 2023，或 work_id（可选）"
       size="default"
     />
 
-    <div class="pref-row">
+    <div v-if="queryType !== 'video'" class="pref-row">
       <label class="pref-label"><input type="checkbox" v-model="prefOfficialOnly" /> 仅官方入口</label>
       <label class="pref-label"><input type="checkbox" v-model="prefHideRent" /> 隐藏「租赁」类 offer</label>
     </div>
@@ -69,17 +70,20 @@ export default {
 
     const tabs = [
       { type: 'title', label: '按剧名查询', icon: '📺' },
-      { type: 'actor', label: '按演员查询', icon: '🎭' }
+      { type: 'actor', label: '按演员查询', icon: '🎭' },
+      { type: 'video', label: '视频解析', icon: '🔗' }
     ];
 
     const currentPlaceholder = computed(() => {
-      return queryType.value === 'title'
-        ? '输入电视剧名称，例如：狂飙'
-        : '输入演员姓名，例如：张译';
+      if (queryType.value === 'title') return '输入电视剧名称，例如：狂飙';
+      if (queryType.value === 'actor') return '输入演员姓名，例如：张译';
+      return '粘贴官方视频页面链接，例如：https://www.bilibili.com/video/...';
     });
 
     const currentIcon = computed(() => {
-      return queryType.value === 'title' ? '📺' : '🎭';
+      if (queryType.value === 'title') return '📺';
+      if (queryType.value === 'actor') return '🎭';
+      return '🔗';
     });
 
     const buildPreferences = () => {
@@ -94,8 +98,8 @@ export default {
       emit('search', {
         queryType: queryType.value,
         query: query.value.trim(),
-        hint: hint.value.trim(),
-        preferences: buildPreferences(),
+        hint: queryType.value === 'video' ? '' : hint.value.trim(),
+        preferences: queryType.value === 'video' ? null : buildPreferences(),
       });
     };
 
@@ -125,12 +129,14 @@ export default {
 
 .search-tabs {
   display: flex;
+  flex-wrap: wrap;
   gap: 10px;
   margin-bottom: 24px;
 }
 
 .tab-btn {
   flex: 1;
+  min-width: 150px;
   padding: 12px 24px;
   border: none;
   background: rgba(255, 255, 255, 0.05);

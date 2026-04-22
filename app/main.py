@@ -40,6 +40,9 @@ _OPENAPI_DESCRIPTION = dedent(
     |------|------|------|
     | POST | `/api/query` | 同步 JSON，`TVAvailabilityResult` |
     | POST | `/api/query/stream` | SSE：`trace.*` → `result.final` |
+    | POST | `/api/video/extract` | 视频 URL 解析，不下载 |
+    | POST | `/api/video/download/prepare` | 创建待确认下载任务 |
+    | POST | `/api/video/download/confirm` | 用户确认后执行下载 |
     | GET | `/api/health` | 存活；有中间件时返回 `request_id` |
     """
 ).strip()

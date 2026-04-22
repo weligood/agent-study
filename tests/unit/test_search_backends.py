@@ -39,6 +39,29 @@ class TestRunUnifiedWebSearch(unittest.TestCase):
         self.assertEqual(len(out["organic_results"]), 1)
         mock_ddg.assert_called_once()
 
+    @patch("tv_agent.search.backends._duckduckgo_backend")
+    @patch("tv_agent.search.backends._searxng_backend")
+    def test_multiple_searxng_instances_try_until_results(
+        self,
+        mock_sx: MagicMock,
+        mock_ddg: MagicMock,
+    ) -> None:
+        mock_sx.side_effect = [
+            {"organic_results": [], "knowledge_graph": {}},
+            {"organic_results": [{"title": "from sx2"}], "knowledge_graph": {}},
+        ]
+        cfg = Settings(
+            openai_api_key="x",
+            searxng_base_url="https://sx1.example;https://sx2.example",
+            search_fallback_ddg=True,
+        )
+        out = run_unified_web_search("query", num_results=3, settings=cfg)
+        self.assertIsNotNone(out)
+        assert out is not None
+        self.assertEqual(out["organic_results"][0]["title"], "from sx2")
+        self.assertEqual(mock_sx.call_count, 2)
+        mock_ddg.assert_not_called()
+
 
 if __name__ == "__main__":
     unittest.main()

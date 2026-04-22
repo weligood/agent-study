@@ -70,3 +70,40 @@ class TvQueryRequest(BaseModel):
         if v is None or (isinstance(v, str) and not v.strip()):
             return None
         return v.strip() if isinstance(v, str) else v
+
+
+class VideoExtractRequest(BaseModel):
+    """POST /api/video/extract 请求体。"""
+
+    video_url: str = Field(..., min_length=8, max_length=2048, description="官方视频页面 URL")
+
+    @field_validator("video_url")
+    @classmethod
+    def validate_video_url(cls, v: str) -> str:
+        s = v.strip()
+        if not (s.startswith("http://") or s.startswith("https://")):
+            raise ValueError("video_url 必须是 http:// 或 https:// 开头的链接")
+        return s
+
+
+class VideoDownloadPrepareRequest(VideoExtractRequest):
+    """POST /api/video/download/prepare 请求体。"""
+
+    quality: str = Field(default="highest", max_length=64, description="清晰度：highest/lowest/具体标签")
+
+    @field_validator("quality")
+    @classmethod
+    def validate_quality(cls, v: str) -> str:
+        s = v.strip()
+        return s or "highest"
+
+
+class VideoDownloadConfirmRequest(BaseModel):
+    """POST /api/video/download/confirm 请求体。"""
+
+    task_id: str = Field(..., min_length=1, max_length=128, description="prepare_download 返回的任务 ID")
+
+    @field_validator("task_id")
+    @classmethod
+    def validate_task_id(cls, v: str) -> str:
+        return v.strip()
